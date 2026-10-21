@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <title>Market List</title>
+  <title>Grocery List</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -35,6 +35,7 @@
     .drag-handle:active { cursor: grabbing; }
     .category.is-dragging { opacity: .45; }
     .category.drop-target { border-top: 2px solid #416b51; }
+    .category-heading { border-radius: 9999px; background: var(--group-tint); color: var(--group-color); }
     .check-box:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #a9c7aa; outline-offset: 3px; }
     @media (prefers-reduced-motion: no-preference) {
       .category { animation: arrive .35s ease both; }
@@ -51,7 +52,7 @@
       </div>
       <div class="mt-3 flex items-end justify-between gap-3">
         <div>
-          <h1 class="font-display text-[38px] leading-[1.05] text-ink">Market list<span class="text-tomato">.</span></h1>
+          <h1 class="font-display text-[38px] leading-[1.05] text-ink">Grocery list<span class="text-tomato">.</span></h1>
           <p id="today" class="mt-2 text-sm text-muted"></p>
         </div>
         <div class="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8e4d7] text-[23px]" aria-hidden="true">🥬</div>
@@ -87,13 +88,28 @@
         { name: 'Dairy', defaults: [] },
         { name: 'Household', defaults: [] }
       ];
+      const CATEGORY_PALETTE = [
+        { color: '#416b51', tint: '#e6eee5' },
+        { color: '#a64f3b', tint: '#f5e8e2' },
+        { color: '#80652f', tint: '#f1eddf' },
+        { color: '#36736d', tint: '#e2efec' },
+        { color: '#536e91', tint: '#e7ecf2' },
+        { color: '#765a46', tint: '#efe8e1' },
+        { color: '#687342', tint: '#edf0e2' }
+      ];
+      const randomColorIndex = () => Math.floor(Math.random() * CATEGORY_PALETTE.length);
+      const chooseUnusedColorIndex = used => {
+        const unused = CATEGORY_PALETTE.map((_, index) => index).filter(index => !used.has(index));
+        return unused.length ? unused[Math.floor(Math.random() * unused.length)] : randomColorIndex();
+      };
 
       const makeId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const makeInitialState = () => ({
         active: CATEGORIES.flatMap(({ name, defaults }) => defaults.map(label => ({ id: makeId(), label, category: name }))),
         archive: [],
         categories: CATEGORIES.map(({ name }) => name),
-        categoryOrder: CATEGORIES.map(({ name }) => name)
+        categoryOrder: CATEGORIES.map(({ name }) => name),
+        categoryColors: Object.fromEntries(CATEGORIES.map(({ name }) => [name, randomColorIndex()]))
       });
 
       function loadState() {
@@ -106,6 +122,15 @@
           parsed.archive = parsed.archive.filter(item => Number.isFinite(item.archivedAt) && item.archivedAt >= cutoff);
           const storedCategories = Array.isArray(parsed.categories) ? parsed.categories : CATEGORIES.map(({ name }) => name);
           parsed.categories = [...new Set(storedCategories.filter(name => typeof name === 'string' && name.trim()))];
+          parsed.categoryColors = parsed.categoryColors && typeof parsed.categoryColors === 'object' ? parsed.categoryColors : {};
+          const usedColors = new Set();
+          parsed.categories.forEach(name => {
+            const colorIndex = parsed.categoryColors[name];
+            if (!Number.isInteger(colorIndex) || colorIndex < 0 || colorIndex >= CATEGORY_PALETTE.length || usedColors.has(colorIndex)) {
+              parsed.categoryColors[name] = chooseUnusedColorIndex(usedColors);
+            }
+            usedColors.add(parsed.categoryColors[name]);
+          });
           [...parsed.active, ...parsed.archive].forEach(item => {
             if (typeof item.category === 'string' && item.category.trim() && !parsed.categories.includes(item.category)) parsed.categories.push(item.category);
           });
@@ -140,6 +165,7 @@
         clearDoneButton.classList.toggle('hidden', state.archive.length === 0);
 
         categoriesEl.innerHTML = state.categoryOrder.map((name, index) => {
+          const color = CATEGORY_PALETTE[state.categoryColors[name]];
           const items = state.active.filter(item => item.category === name);
           const rows = items.map(item => `
             <div class="group flex min-h-[52px] items-center gap-3 border-b border-line/70 px-1">
@@ -155,7 +181,7 @@
                     <span class="grid grid-cols-2 gap-[3px]" aria-hidden="true">${'<i class="h-[3px] w-[3px] rounded-full bg-current"></i>'.repeat(6)}</span>
                   </button>
                   <h2 id="heading-${index}">
-                    <button type="button" class="min-h-11 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-muted" data-action="rename" aria-label="Rename ${escapeHtml(name)}" title="Tap to rename">${escapeHtml(name)}</button>
+                    <button type="button" class="category-heading min-h-11 px-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em]" style="--group-color:${color.color};--group-tint:${color.tint}" data-action="rename" aria-label="Rename ${escapeHtml(name)}" title="Tap to rename">${escapeHtml(name)}</button>
                   </h2>
                 </div>
                 <span class="text-xs tabular-nums text-muted">${items.length}</span>
@@ -235,6 +261,8 @@
           if (commit && nextName && !duplicate) {
             state.categories = state.categories.map(name => name === oldName ? nextName : name);
             state.categoryOrder = state.categoryOrder.map(name => name === oldName ? nextName : name);
+            state.categoryColors[nextName] = state.categoryColors[oldName];
+            delete state.categoryColors[oldName];
             [...state.active, ...state.archive].forEach(item => {
               if (item.category === oldName) item.category = nextName;
             });
@@ -275,6 +303,7 @@
           saved = true;
           state.categories.push(name);
           state.categoryOrder.push(name);
+          state.categoryColors[name] = chooseUnusedColorIndex(new Set(Object.values(state.categoryColors)));
           persist();
           render();
           openCategoryAdd(document.querySelector('#add-category-area'));
