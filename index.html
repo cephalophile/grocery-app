@@ -59,6 +59,30 @@
       </div>
     </header>
 
+    <section class="mb-5 rounded-xl border border-[#dce5d8] bg-[#eef3eb] px-4 py-3" aria-labelledby="meal-plan-heading">
+      <div class="flex items-center justify-between gap-3">
+        <button id="meal-plan-toggle" type="button" class="flex min-h-12 min-w-0 flex-1 items-center justify-between gap-3 text-left" aria-expanded="true" aria-controls="meal-plan-content">
+          <span id="meal-plan-heading" class="font-display text-xl text-ink">This week's meals</span>
+          <span class="flex shrink-0 items-center gap-2">
+            <span id="meal-plan-count" class="text-xs text-muted"></span>
+            <span id="meal-plan-chevron" class="text-lg text-leaf" aria-hidden="true">⌄</span>
+          </span>
+        </button>
+      </div>
+      <div id="meal-plan-content">
+        <div class="mb-1 flex justify-end">
+          <span id="meal-plan-status" class="text-xs text-muted" aria-live="polite">Saved on this device</span>
+        </div>
+        <div id="meal-list" class="divide-y divide-[#dce5d8]"></div>
+        <div id="meal-add-area" class="mt-1">
+          <button type="button" class="flex min-h-[48px] items-center gap-3 text-sm text-muted" data-action="open-meal-add">
+            <span class="flex h-6 w-6 items-center justify-center rounded-full border border-[#cbd2c8] text-[19px] leading-none text-leaf" aria-hidden="true">+</span>
+            <span>Add a meal</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
     <div id="categories" class="divide-y divide-line border-y border-line" aria-label="Grocery categories"></div>
     <div id="add-category-area" class="py-2">
       <button type="button" class="flex min-h-[48px] items-center gap-3 px-1 text-sm text-muted" data-action="open-category-add">
@@ -109,7 +133,9 @@
         archive: [],
         categories: CATEGORIES.map(({ name }) => name),
         categoryOrder: CATEGORIES.map(({ name }) => name),
-        categoryColors: Object.fromEntries(CATEGORIES.map(({ name }) => [name, randomColorIndex()]))
+        categoryColors: Object.fromEntries(CATEGORIES.map(({ name }) => [name, randomColorIndex()])),
+        meals: [],
+        mealsCollapsed: false
       });
 
       function loadState() {
@@ -118,6 +144,14 @@
           if (!stored) return makeInitialState();
           const parsed = JSON.parse(stored);
           if (!Array.isArray(parsed.active) || !Array.isArray(parsed.archive)) return makeInitialState();
+          if (!Array.isArray(parsed.meals)) {
+            parsed.meals = typeof parsed.mealPlan === 'string'
+              ? parsed.mealPlan.split(/\r?\n/).map(meal => meal.trim()).filter(Boolean).map(label => ({ id: makeId(), label }))
+              : [];
+          }
+          parsed.meals = parsed.meals.filter(meal => meal && typeof meal.label === 'string').map(meal => ({ id: meal.id || makeId(), label: meal.label }));
+          parsed.mealsCollapsed = parsed.mealsCollapsed === true;
+          delete parsed.mealPlan;
           const cutoff = Date.now() - ARCHIVE_RETENTION_MS;
           parsed.archive = parsed.archive.filter(item => Number.isFinite(item.archivedAt) && item.archivedAt >= cutoff);
           const storedCategories = Array.isArray(parsed.categories) ? parsed.categories : CATEGORIES.map(({ name }) => name);
@@ -147,6 +181,13 @@
       const categoriesEl = document.querySelector('#categories');
       const countEl = document.querySelector('#item-count');
       const clearDoneButton = document.querySelector('#clear-done');
+      const mealsEl = document.querySelector('#meal-list');
+      const mealAddArea = document.querySelector('#meal-add-area');
+      const mealPlanStatus = document.querySelector('#meal-plan-status');
+      const mealPlanToggle = document.querySelector('#meal-plan-toggle');
+      const mealPlanContent = document.querySelector('#meal-plan-content');
+      const mealPlanCount = document.querySelector('#meal-plan-count');
+      const mealPlanChevron = document.querySelector('#meal-plan-chevron');
       let dragState = null;
 
       function persist() {
@@ -163,6 +204,7 @@
         const activeCount = state.active.length;
         countEl.textContent = `${activeCount} ${activeCount === 1 ? 'item' : 'items'}`;
         clearDoneButton.classList.toggle('hidden', state.archive.length === 0);
+        renderMeals();
 
         categoriesEl.innerHTML = state.categoryOrder.map((name, index) => {
           const color = CATEGORY_PALETTE[state.categoryColors[name]];
@@ -195,6 +237,75 @@
               </div>
             </section>`;
         }).join('');
+      }
+
+      function renderMeals() {
+        const count = state.meals.length;
+        mealPlanCount.textContent = `${count} ${count === 1 ? 'meal' : 'meals'}`;
+        mealPlanToggle.setAttribute('aria-expanded', String(!state.mealsCollapsed));
+        mealPlanContent.hidden = state.mealsCollapsed;
+        mealPlanChevron.textContent = state.mealsCollapsed ? '›' : '⌄';
+        mealsEl.innerHTML = state.meals.map(meal => `
+          <div class="flex min-h-[48px] items-center gap-2">
+            <button type="button" class="min-h-[48px] min-w-0 flex-1 py-2 text-left text-[16px] text-ink" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">${escapeHtml(meal.label)}</button>
+            <button type="button" class="min-h-11 min-w-11 rounded-lg text-lg text-muted" data-action="delete-meal" data-id="${escapeHtml(meal.id)}" aria-label="Delete ${escapeHtml(meal.label)}" title="Delete meal">&times;</button>
+          </div>`).join('');
+      }
+
+      function startMealEditing(button) {
+        const meal = state.meals.find(entry => entry.id === button.dataset.id);
+        if (!meal) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = meal.label;
+        input.maxLength = 100;
+        input.autocomplete = 'off';
+        input.setAttribute('aria-label', `Edit ${meal.label}`);
+        input.className = 'min-h-[48px] min-w-0 flex-1 border-0 bg-transparent py-2 text-ink outline-none';
+        button.replaceWith(input);
+        let saved = false;
+        const finish = commit => {
+          if (saved) return;
+          saved = true;
+          const label = input.value.trim();
+          if (commit && label) meal.label = label;
+          if (commit && label) persist();
+          renderMeals();
+        };
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+          if (event.key === 'Escape') finish(false);
+        });
+        input.addEventListener('blur', () => finish(true));
+        focusInput(input);
+      }
+
+      function openMealAdd() {
+        if (mealAddArea.querySelector('input')) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Add a meal';
+        input.maxLength = 100;
+        input.autocomplete = 'off';
+        input.setAttribute('aria-label', 'New meal');
+        input.className = 'min-h-[48px] w-full border-b border-leaf/40 bg-transparent text-ink placeholder:text-muted/70 outline-none';
+        mealAddArea.replaceChildren(input);
+        const add = () => {
+          const label = input.value.trim();
+          if (!label) return;
+          state.meals.push({ id: makeId(), label });
+          persist();
+          renderMeals();
+          openMealAdd();
+        };
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); add(); }
+          if (event.key === 'Escape') render();
+        });
+        input.addEventListener('blur', () => {
+          if (!input.value.trim() && input.isConnected) render();
+        });
+        focusInput(input);
       }
 
       function finishReorder() {
@@ -362,6 +473,27 @@
 
       document.querySelector('#add-category-area').addEventListener('click', event => {
         if (event.target.closest('[data-action="open-category-add"]')) openCategoryAdd(event.currentTarget);
+      });
+
+      mealsEl.addEventListener('click', event => {
+        const target = event.target.closest('[data-action]');
+        if (!target) return;
+        if (target.dataset.action === 'edit-meal') startMealEditing(target);
+        if (target.dataset.action === 'delete-meal') {
+          state.meals = state.meals.filter(meal => meal.id !== target.dataset.id);
+          persist();
+          renderMeals();
+        }
+      });
+
+      mealAddArea.addEventListener('click', event => {
+        if (event.target.closest('[data-action="open-meal-add"]')) openMealAdd();
+      });
+
+      mealPlanToggle.addEventListener('click', () => {
+        state.mealsCollapsed = !state.mealsCollapsed;
+        persist();
+        renderMeals();
       });
 
       categoriesEl.addEventListener('pointerdown', event => {
