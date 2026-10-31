@@ -56,11 +56,10 @@
           <div class="flex items-center gap-2">
             <label class="sr-only" for="list-select">Current list</label>
             <select id="list-select" class="min-h-11 max-w-[250px] min-w-0 bg-transparent pr-7 font-display text-[38px] leading-[1.05] text-ink outline-none"></select>
-            <span class="font-display text-[38px] leading-[1.05] text-tomato">.</span>
           </div>
           <p id="today" class="mt-2 text-sm text-muted"></p>
         </div>
-        <div class="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8e4d7] text-[23px]" aria-hidden="true">🥬</div>
+        <button id="list-emoji" type="button" class="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8e4d7] text-[23px]" aria-label="Edit list emoji" title="Edit list emoji"></button>
       </div>
       <div id="list-actions" class="mt-3"></div>
     </header>
@@ -137,6 +136,7 @@
       const makeList = (name, includeDefaults = false) => ({
         id: makeId(),
         name,
+        emoji: '🥬',
         active: includeDefaults ? CATEGORIES.flatMap(({ name: category, defaults }) => defaults.map(label => ({ id: makeId(), label, category }))) : [],
         archive: [],
         categories: CATEGORIES.map(({ name: category }) => category),
@@ -153,6 +153,7 @@
       function normalizeList(list) {
         list.id ||= makeId();
         list.name = typeof list.name === 'string' && list.name.trim() ? list.name.trim() : 'Grocery list';
+        list.emoji = typeof list.emoji === 'string' && list.emoji.trim() ? list.emoji.trim() : '🥬';
         list.active = Array.isArray(list.active) ? list.active : [];
         list.archive = Array.isArray(list.archive) ? list.archive : [];
         list.meals = Array.isArray(list.meals) ? list.meals.filter(meal => meal && typeof meal.label === 'string').map(meal => ({ id: meal.id || makeId(), label: meal.label })) : [];
@@ -209,6 +210,7 @@
       const mealPlanChevron = document.querySelector('#meal-plan-chevron');
       const listSelect = document.querySelector('#list-select');
       const listActions = document.querySelector('#list-actions');
+      const listEmoji = document.querySelector('#list-emoji');
       let dragState = null;
       let itemDragState = null;
 
@@ -226,6 +228,7 @@
         const list = currentList();
         listSelect.innerHTML = state.lists.map(entry => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`).join('');
         listSelect.value = list.id;
+        listEmoji.textContent = list.emoji;
         listActions.innerHTML = `<button type="button" class="min-h-11 px-1 text-sm font-medium text-leaf underline decoration-leaf/40 underline-offset-4" data-action="open-list-add">+ New list</button>`;
         const activeCount = list.active.length;
         countEl.textContent = `${activeCount} ${activeCount === 1 ? 'item' : 'items'}`;
@@ -502,6 +505,34 @@
         focusInput(input);
       }
 
+      function openListEmojiEdit() {
+        const list = currentList();
+        if (listEmoji.querySelector('input')) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = list.emoji;
+        input.maxLength = 4;
+        input.inputMode = 'text';
+        input.setAttribute('aria-label', 'List emoji');
+        input.className = 'h-10 w-10 bg-transparent text-center text-[23px] outline-none';
+        listEmoji.replaceChildren(input);
+        let saved = false;
+        const finish = commit => {
+          if (saved) return;
+          saved = true;
+          const emoji = input.value.trim();
+          if (commit && emoji) list.emoji = emoji;
+          persist();
+          render();
+        };
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+          if (event.key === 'Escape') finish(false);
+        });
+        input.addEventListener('blur', () => finish(true));
+        focusInput(input);
+      }
+
       function updateMoveGroups(groupSelect, listId) {
         const list = state.lists.find(entry => entry.id === listId);
         groupSelect.innerHTML = (list?.categoryOrder || []).map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
@@ -600,6 +631,8 @@
       listActions.addEventListener('click', event => {
         if (event.target.closest('[data-action="open-list-add"]')) openListAdd();
       });
+
+      listEmoji.addEventListener('click', openListEmojiEdit);
 
       document.querySelector('#add-category-area').addEventListener('click', event => {
         if (event.target.closest('[data-action="open-category-add"]')) openCategoryAdd(event.currentTarget);
