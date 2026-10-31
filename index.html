@@ -36,6 +36,7 @@
     .category.is-dragging { opacity: .45; }
     .category.drop-target { border-top: 2px solid #416b51; }
     .category-heading { border-radius: 9999px; background: var(--group-tint); color: var(--group-color); }
+    .move-picker { border: 1px solid #dce5d8; background: #f1f5ef; }
     .check-box:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #a9c7aa; outline-offset: 3px; }
     @media (prefers-reduced-motion: no-preference) {
       .category { animation: arrive .35s ease both; }
@@ -52,11 +53,16 @@
       </div>
       <div class="mt-3 flex items-end justify-between gap-3">
         <div>
-          <h1 class="font-display text-[38px] leading-[1.05] text-ink">Grocery list<span class="text-tomato">.</span></h1>
+          <div class="flex items-center gap-2">
+            <label class="sr-only" for="list-select">Current list</label>
+            <select id="list-select" class="min-h-11 max-w-[250px] min-w-0 bg-transparent pr-7 font-display text-[38px] leading-[1.05] text-ink outline-none"></select>
+            <span class="font-display text-[38px] leading-[1.05] text-tomato">.</span>
+          </div>
           <p id="today" class="mt-2 text-sm text-muted"></p>
         </div>
         <div class="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8e4d7] text-[23px]" aria-hidden="true">🥬</div>
       </div>
+      <div id="list-actions" class="mt-3"></div>
     </header>
 
     <section class="mb-5 rounded-xl border border-[#dce5d8] bg-[#eef3eb] px-4 py-3" aria-labelledby="meal-plan-heading">
@@ -128,48 +134,60 @@
       };
 
       const makeId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const makeInitialState = () => ({
-        active: CATEGORIES.flatMap(({ name, defaults }) => defaults.map(label => ({ id: makeId(), label, category: name }))),
+      const makeList = (name, includeDefaults = false) => ({
+        id: makeId(),
+        name,
+        active: includeDefaults ? CATEGORIES.flatMap(({ name: category, defaults }) => defaults.map(label => ({ id: makeId(), label, category }))) : [],
         archive: [],
-        categories: CATEGORIES.map(({ name }) => name),
-        categoryOrder: CATEGORIES.map(({ name }) => name),
-        categoryColors: Object.fromEntries(CATEGORIES.map(({ name }) => [name, randomColorIndex()])),
+        categories: CATEGORIES.map(({ name: category }) => category),
+        categoryOrder: CATEGORIES.map(({ name: category }) => category),
+        categoryColors: Object.fromEntries(CATEGORIES.map(({ name: category }) => [category, randomColorIndex()])),
         meals: [],
         mealsCollapsed: false
       });
+      const makeInitialState = () => {
+        const list = makeList('Grocery list', true);
+        return { lists: [list], selectedListId: list.id };
+      };
+
+      function normalizeList(list) {
+        list.id ||= makeId();
+        list.name = typeof list.name === 'string' && list.name.trim() ? list.name.trim() : 'Grocery list';
+        list.active = Array.isArray(list.active) ? list.active : [];
+        list.archive = Array.isArray(list.archive) ? list.archive : [];
+        list.meals = Array.isArray(list.meals) ? list.meals.filter(meal => meal && typeof meal.label === 'string').map(meal => ({ id: meal.id || makeId(), label: meal.label })) : [];
+        list.mealsCollapsed = list.mealsCollapsed === true;
+        list.categories = [...new Set((Array.isArray(list.categories) ? list.categories : CATEGORIES.map(({ name }) => name)).filter(name => typeof name === 'string' && name.trim()))];
+        list.categoryColors = list.categoryColors && typeof list.categoryColors === 'object' ? list.categoryColors : {};
+        const usedColors = new Set();
+        list.categories.forEach(name => {
+          const colorIndex = list.categoryColors[name];
+          if (!Number.isInteger(colorIndex) || colorIndex < 0 || colorIndex >= CATEGORY_PALETTE.length || usedColors.has(colorIndex)) list.categoryColors[name] = chooseUnusedColorIndex(usedColors);
+          usedColors.add(list.categoryColors[name]);
+        });
+        [...list.active, ...list.archive].forEach(item => {
+          if (typeof item.category === 'string' && item.category.trim() && !list.categories.includes(item.category)) list.categories.push(item.category);
+        });
+        const savedOrder = Array.isArray(list.categoryOrder) ? list.categoryOrder : [];
+        list.categoryOrder = [...new Set(savedOrder.filter(name => list.categories.includes(name))), ...list.categories.filter(name => !savedOrder.includes(name))];
+        return list;
+      }
 
       function loadState() {
         try {
           const stored = localStorage.getItem(STORAGE_KEY);
           if (!stored) return makeInitialState();
           const parsed = JSON.parse(stored);
-          if (!Array.isArray(parsed.active) || !Array.isArray(parsed.archive)) return makeInitialState();
-          if (!Array.isArray(parsed.meals)) {
-            parsed.meals = typeof parsed.mealPlan === 'string'
-              ? parsed.mealPlan.split(/\r?\n/).map(meal => meal.trim()).filter(Boolean).map(label => ({ id: makeId(), label }))
-              : [];
-          }
-          parsed.meals = parsed.meals.filter(meal => meal && typeof meal.label === 'string').map(meal => ({ id: meal.id || makeId(), label: meal.label }));
-          parsed.mealsCollapsed = parsed.mealsCollapsed === true;
-          delete parsed.mealPlan;
           const cutoff = Date.now() - ARCHIVE_RETENTION_MS;
-          parsed.archive = parsed.archive.filter(item => Number.isFinite(item.archivedAt) && item.archivedAt >= cutoff);
-          const storedCategories = Array.isArray(parsed.categories) ? parsed.categories : CATEGORIES.map(({ name }) => name);
-          parsed.categories = [...new Set(storedCategories.filter(name => typeof name === 'string' && name.trim()))];
-          parsed.categoryColors = parsed.categoryColors && typeof parsed.categoryColors === 'object' ? parsed.categoryColors : {};
-          const usedColors = new Set();
-          parsed.categories.forEach(name => {
-            const colorIndex = parsed.categoryColors[name];
-            if (!Number.isInteger(colorIndex) || colorIndex < 0 || colorIndex >= CATEGORY_PALETTE.length || usedColors.has(colorIndex)) {
-              parsed.categoryColors[name] = chooseUnusedColorIndex(usedColors);
-            }
-            usedColors.add(parsed.categoryColors[name]);
-          });
-          [...parsed.active, ...parsed.archive].forEach(item => {
-            if (typeof item.category === 'string' && item.category.trim() && !parsed.categories.includes(item.category)) parsed.categories.push(item.category);
-          });
-          const savedOrder = Array.isArray(parsed.categoryOrder) ? parsed.categoryOrder : [];
-          parsed.categoryOrder = [...new Set(savedOrder.filter(name => parsed.categories.includes(name))), ...parsed.categories.filter(name => !savedOrder.includes(name))];
+          if (!Array.isArray(parsed.lists)) {
+            const legacy = normalizeList({ ...parsed, id: makeId(), name: 'Grocery list' });
+            legacy.archive = legacy.archive.filter(item => Number.isFinite(item.archivedAt) && item.archivedAt >= cutoff);
+            return { lists: [legacy], selectedListId: legacy.id };
+          }
+          parsed.lists = parsed.lists.map(normalizeList);
+          parsed.lists.forEach(list => { list.archive = list.archive.filter(item => Number.isFinite(item.archivedAt) && item.archivedAt >= cutoff); });
+          if (!parsed.lists.length) return makeInitialState();
+          if (!parsed.lists.some(list => list.id === parsed.selectedListId)) parsed.selectedListId = parsed.lists[0].id;
           return parsed;
         } catch (error) {
           console.error('Could not load the grocery list.', error);
@@ -178,6 +196,7 @@
       }
 
       let state = loadState();
+      const currentList = () => state.lists.find(list => list.id === state.selectedListId) || state.lists[0];
       const categoriesEl = document.querySelector('#categories');
       const countEl = document.querySelector('#item-count');
       const clearDoneButton = document.querySelector('#clear-done');
@@ -188,7 +207,10 @@
       const mealPlanContent = document.querySelector('#meal-plan-content');
       const mealPlanCount = document.querySelector('#meal-plan-count');
       const mealPlanChevron = document.querySelector('#meal-plan-chevron');
+      const listSelect = document.querySelector('#list-select');
+      const listActions = document.querySelector('#list-actions');
       let dragState = null;
+      let itemDragState = null;
 
       function persist() {
         try {
@@ -201,18 +223,23 @@
       const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
       function render() {
-        const activeCount = state.active.length;
+        const list = currentList();
+        listSelect.innerHTML = state.lists.map(entry => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`).join('');
+        listSelect.value = list.id;
+        listActions.innerHTML = `<button type="button" class="min-h-11 px-1 text-sm font-medium text-leaf underline decoration-leaf/40 underline-offset-4" data-action="open-list-add">+ New list</button>`;
+        const activeCount = list.active.length;
         countEl.textContent = `${activeCount} ${activeCount === 1 ? 'item' : 'items'}`;
-        clearDoneButton.classList.toggle('hidden', state.archive.length === 0);
+        clearDoneButton.classList.toggle('hidden', list.archive.length === 0);
         renderMeals();
 
-        categoriesEl.innerHTML = state.categoryOrder.map((name, index) => {
-          const color = CATEGORY_PALETTE[state.categoryColors[name]];
-          const items = state.active.filter(item => item.category === name);
+        categoriesEl.innerHTML = list.categoryOrder.map((name, index) => {
+          const color = CATEGORY_PALETTE[list.categoryColors[name]];
+          const items = list.active.filter(item => item.category === name);
           const rows = items.map(item => `
-            <div class="group flex min-h-[52px] items-center gap-3 border-b border-line/70 px-1">
+            <div class="item-row group flex min-h-[52px] items-center gap-2 border-b border-line/70 px-1" draggable="true" data-id="${escapeHtml(item.id)}" data-category="${escapeHtml(name)}">
               <input class="check-box" type="checkbox" aria-label="Check off ${escapeHtml(item.label)}" data-action="archive" data-id="${escapeHtml(item.id)}">
               <button type="button" class="flex min-h-[48px] min-w-0 flex-1 items-center text-left text-[16px] text-ink" data-action="edit" data-id="${escapeHtml(item.id)}">${escapeHtml(item.label)}</button>
+              <button type="button" class="min-h-11 shrink-0 px-1 text-xs font-medium text-leaf opacity-70" data-action="move" data-id="${escapeHtml(item.id)}" aria-label="Move ${escapeHtml(item.label)}" title="Move item">Move</button>
             </div>`).join('');
 
           return `
@@ -240,12 +267,13 @@
       }
 
       function renderMeals() {
-        const count = state.meals.length;
+        const list = currentList();
+        const count = list.meals.length;
         mealPlanCount.textContent = `${count} ${count === 1 ? 'meal' : 'meals'}`;
-        mealPlanToggle.setAttribute('aria-expanded', String(!state.mealsCollapsed));
-        mealPlanContent.hidden = state.mealsCollapsed;
-        mealPlanChevron.textContent = state.mealsCollapsed ? '›' : '⌄';
-        mealsEl.innerHTML = state.meals.map(meal => `
+        mealPlanToggle.setAttribute('aria-expanded', String(!list.mealsCollapsed));
+        mealPlanContent.hidden = list.mealsCollapsed;
+        mealPlanChevron.textContent = list.mealsCollapsed ? '›' : '⌄';
+        mealsEl.innerHTML = list.meals.map(meal => `
           <div class="flex min-h-[48px] items-center gap-2">
             <button type="button" class="min-h-[48px] min-w-0 flex-1 py-2 text-left text-[16px] text-ink" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">${escapeHtml(meal.label)}</button>
             <button type="button" class="min-h-11 min-w-11 rounded-lg text-lg text-muted" data-action="delete-meal" data-id="${escapeHtml(meal.id)}" aria-label="Delete ${escapeHtml(meal.label)}" title="Delete meal">&times;</button>
@@ -253,7 +281,8 @@
       }
 
       function startMealEditing(button) {
-        const meal = state.meals.find(entry => entry.id === button.dataset.id);
+        const list = currentList();
+        const meal = list.meals.find(entry => entry.id === button.dataset.id);
         if (!meal) return;
         const input = document.createElement('input');
         input.type = 'text';
@@ -293,7 +322,7 @@
         const add = () => {
           const label = input.value.trim();
           if (!label) return;
-          state.meals.push({ id: makeId(), label });
+          currentList().meals.push({ id: makeId(), label });
           persist();
           renderMeals();
           input.value = '';
@@ -318,7 +347,7 @@
         if (!dragState) return;
         dragState.section.classList.remove('is-dragging');
         categoriesEl.querySelectorAll('.drop-target').forEach(section => section.classList.remove('drop-target'));
-        state.categoryOrder = [...categoriesEl.querySelectorAll('.category')].map(section => section.dataset.category);
+        currentList().categoryOrder = [...categoriesEl.querySelectorAll('.category')].map(section => section.dataset.category);
         dragState = null;
         persist();
         render();
@@ -330,7 +359,8 @@
       }
 
       function startEditing(button) {
-        const item = state.active.find(entry => entry.id === button.dataset.id);
+        const list = currentList();
+        const item = list.active.find(entry => entry.id === button.dataset.id);
         if (!item) return;
         const input = document.createElement('input');
         input.type = 'text';
@@ -358,6 +388,7 @@
       }
 
       function startRename(button) {
+        const list = currentList();
         const section = button.closest('.category');
         const oldName = section?.dataset.category;
         if (!oldName) return;
@@ -374,13 +405,13 @@
           if (saved) return;
           saved = true;
           const nextName = input.value.trim();
-          const duplicate = state.categories.some(name => name !== oldName && name.toLocaleLowerCase() === nextName.toLocaleLowerCase());
+          const duplicate = list.categories.some(name => name !== oldName && name.toLocaleLowerCase() === nextName.toLocaleLowerCase());
           if (commit && nextName && !duplicate) {
-            state.categories = state.categories.map(name => name === oldName ? nextName : name);
-            state.categoryOrder = state.categoryOrder.map(name => name === oldName ? nextName : name);
-            state.categoryColors[nextName] = state.categoryColors[oldName];
-            delete state.categoryColors[oldName];
-            [...state.active, ...state.archive].forEach(item => {
+            list.categories = list.categories.map(name => name === oldName ? nextName : name);
+            list.categoryOrder = list.categoryOrder.map(name => name === oldName ? nextName : name);
+            list.categoryColors[nextName] = list.categoryColors[oldName];
+            delete list.categoryColors[oldName];
+            [...list.active, ...list.archive].forEach(item => {
               if (item.category === oldName) item.category = nextName;
             });
             persist();
@@ -396,6 +427,7 @@
       }
 
       function openCategoryAdd(area) {
+        const list = currentList();
         if (area.querySelector('input')) return;
         const input = document.createElement('input');
         input.type = 'text';
@@ -413,14 +445,14 @@
           if (saved) return;
           const name = input.value.trim();
           if (!name) return;
-          if (state.categories.some(category => category.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+          if (list.categories.some(category => category.toLocaleLowerCase() === name.toLocaleLowerCase())) {
             status.textContent = 'A group with that name already exists.';
             return;
           }
           saved = true;
-          state.categories.push(name);
-          state.categoryOrder.push(name);
-          state.categoryColors[name] = chooseUnusedColorIndex(new Set(Object.values(state.categoryColors)));
+          list.categories.push(name);
+          list.categoryOrder.push(name);
+          list.categoryColors[name] = chooseUnusedColorIndex(new Set(Object.values(list.categoryColors)));
           persist();
           render();
           openCategoryAdd(document.querySelector('#add-category-area'));
@@ -436,7 +468,83 @@
         focusInput(input);
       }
 
+      function openListAdd() {
+        if (listActions.querySelector('input')) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'New list name';
+        input.maxLength = 40;
+        input.autocomplete = 'off';
+        input.setAttribute('aria-label', 'New list name');
+        input.className = 'min-h-11 w-full max-w-[280px] border-b border-leaf/40 bg-transparent text-ink placeholder:text-muted/70 outline-none';
+        listActions.replaceChildren(input);
+        let saved = false;
+        const add = () => {
+          if (saved) return;
+          const name = input.value.trim();
+          if (!name) return;
+          if (state.lists.some(list => list.name.toLocaleLowerCase() === name.toLocaleLowerCase())) return;
+          saved = true;
+          const list = makeList(name);
+          state.lists.push(list);
+          state.selectedListId = list.id;
+          persist();
+          render();
+        };
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); add(); }
+          if (event.key === 'Escape') render();
+        });
+        input.addEventListener('blur', () => {
+          if (input.value.trim()) add();
+          else if (input.isConnected) render();
+        });
+        focusInput(input);
+      }
+
+      function updateMoveGroups(groupSelect, listId) {
+        const list = state.lists.find(entry => entry.id === listId);
+        groupSelect.innerHTML = (list?.categoryOrder || []).map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
+      }
+
+      function moveItem(itemId, destinationListId, category) {
+        const source = currentList();
+        const destination = state.lists.find(list => list.id === destinationListId);
+        const index = source.active.findIndex(item => item.id === itemId);
+        if (!destination || index === -1 || !category) return;
+        if (source === destination && source.active[index].category === category) return;
+        const [item] = source.active.splice(index, 1);
+        item.category = category;
+        destination.active.push(item);
+        persist();
+        render();
+      }
+
+      function openMovePicker(button) {
+        const row = button.closest('.item-row');
+        if (!row || row.nextElementSibling?.classList.contains('move-picker')) return;
+        const destinations = state.lists;
+        const panel = document.createElement('div');
+        panel.className = 'move-picker flex flex-wrap items-center gap-2 px-1 py-3';
+        panel.innerHTML = `
+          <label class="sr-only" for="move-list-${button.dataset.id}">Move to list</label>
+          <select id="move-list-${button.dataset.id}" class="min-h-10 min-w-0 flex-1 rounded-md border border-[#cbd2c8] bg-paper px-2 text-sm text-ink" data-move-list>
+            ${destinations.map(list => `<option value="${escapeHtml(list.id)}"${list.id === currentList().id ? ' selected' : ''}>${escapeHtml(list.name)}</option>`).join('')}
+          </select>
+          <label class="sr-only" for="move-group-${button.dataset.id}">Move to group</label>
+          <select id="move-group-${button.dataset.id}" class="min-h-10 min-w-0 flex-1 rounded-md border border-[#cbd2c8] bg-paper px-2 text-sm text-ink" data-move-group></select>
+          <button type="button" class="min-h-10 rounded-md bg-leaf px-3 text-sm font-medium text-white" data-action="confirm-move" data-id="${escapeHtml(button.dataset.id)}">Move</button>
+          <button type="button" class="min-h-10 px-2 text-sm text-muted" data-action="cancel-move">Cancel</button>`;
+        row.insertAdjacentElement('afterend', panel);
+        const listSelect = panel.querySelector('[data-move-list]');
+        const groupSelect = panel.querySelector('[data-move-group]');
+        updateMoveGroups(groupSelect, listSelect.value);
+        groupSelect.value = row.dataset.category;
+        listSelect.addEventListener('change', () => updateMoveGroups(groupSelect, listSelect.value));
+      }
+
       function openAdd(area) {
+        const list = currentList();
         if (area.querySelector('input')) return;
         const category = area.dataset.category;
         const input = document.createElement('input');
@@ -452,7 +560,7 @@
         const addItem = () => {
           const label = input.value.trim();
           if (!label) return;
-          state.active.push({ id: makeId(), label, category });
+          list.active.push({ id: makeId(), label, category });
           persist();
           render();
           const nextArea = [...categoriesEl.querySelectorAll('.add-area')].find(element => element.dataset.category === category);
@@ -475,6 +583,22 @@
         if (target.dataset.action === 'edit') startEditing(target);
         if (target.dataset.action === 'rename') startRename(target);
         if (target.dataset.action === 'open-add') openAdd(target.closest('.add-area'));
+        if (target.dataset.action === 'move') openMovePicker(target);
+        if (target.dataset.action === 'cancel-move') target.closest('.move-picker')?.remove();
+        if (target.dataset.action === 'confirm-move') {
+          const panel = target.closest('.move-picker');
+          moveItem(target.dataset.id, panel.querySelector('[data-move-list]').value, panel.querySelector('[data-move-group]').value);
+        }
+      });
+
+      listSelect.addEventListener('change', () => {
+        state.selectedListId = listSelect.value;
+        persist();
+        render();
+      });
+
+      listActions.addEventListener('click', event => {
+        if (event.target.closest('[data-action="open-list-add"]')) openListAdd();
       });
 
       document.querySelector('#add-category-area').addEventListener('click', event => {
@@ -486,7 +610,8 @@
         if (!target) return;
         if (target.dataset.action === 'edit-meal') startMealEditing(target);
         if (target.dataset.action === 'delete-meal') {
-          state.meals = state.meals.filter(meal => meal.id !== target.dataset.id);
+          const list = currentList();
+          list.meals = list.meals.filter(meal => meal.id !== target.dataset.id);
           persist();
           renderMeals();
         }
@@ -497,7 +622,8 @@
       });
 
       mealPlanToggle.addEventListener('click', () => {
-        state.mealsCollapsed = !state.mealsCollapsed;
+        const list = currentList();
+        list.mealsCollapsed = !list.mealsCollapsed;
         persist();
         renderMeals();
       });
@@ -538,21 +664,71 @@
         if (dragState && event.pointerId === dragState.pointerId) finishReorder();
       });
 
+      categoriesEl.addEventListener('dragstart', event => {
+        const row = event.target.closest('.item-row');
+        if (!row) return;
+        itemDragState = { itemId: row.dataset.id };
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', row.dataset.id);
+        row.classList.add('opacity-40');
+      });
+
+      categoriesEl.addEventListener('dragover', event => {
+        if (!itemDragState) return;
+        const section = event.target.closest('.category');
+        if (!section) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        categoriesEl.querySelectorAll('.drop-target').forEach(element => element.classList.remove('drop-target'));
+        section.classList.add('drop-target');
+      });
+
+      categoriesEl.addEventListener('dragenter', event => {
+        if (!itemDragState) return;
+        const section = event.target.closest('.category');
+        if (!section) return;
+        event.preventDefault();
+        section.classList.add('drop-target');
+      });
+
+      categoriesEl.addEventListener('drop', event => {
+        if (!itemDragState) return;
+        const section = event.target.closest('.category');
+        if (!section) return;
+        event.preventDefault();
+        const item = currentList().active.find(entry => entry.id === itemDragState.itemId);
+        if (item && item.category !== section.dataset.category) {
+          item.category = section.dataset.category;
+          persist();
+          render();
+        }
+        itemDragState = null;
+        categoriesEl.querySelectorAll('.drop-target').forEach(element => element.classList.remove('drop-target'));
+      });
+
+      categoriesEl.addEventListener('dragend', event => {
+        const row = event.target.closest('.item-row');
+        if (row) row.classList.remove('opacity-40');
+        itemDragState = null;
+        categoriesEl.querySelectorAll('.drop-target').forEach(element => element.classList.remove('drop-target'));
+      });
+
       categoriesEl.addEventListener('change', event => {
         const checkbox = event.target.closest('input[data-action="archive"]');
         if (!checkbox?.checked) return;
-        const index = state.active.findIndex(item => item.id === checkbox.dataset.id);
+        const list = currentList();
+        const index = list.active.findIndex(item => item.id === checkbox.dataset.id);
         if (index === -1) return;
-        const [item] = state.active.splice(index, 1);
+        const [item] = list.active.splice(index, 1);
         item.checked = true;
         item.archivedAt = Date.now();
-        state.archive.push(item);
+        list.archive.push(item);
         persist();
         render();
       });
 
       clearDoneButton.addEventListener('click', () => {
-        state.archive = [];
+        currentList().archive = [];
         persist();
         render();
       });
