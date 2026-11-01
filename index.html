@@ -105,9 +105,17 @@
       <button id="delete-list-button" type="button" class="min-h-11 px-1 text-sm font-medium text-tomato underline decoration-tomato/40 underline-offset-4" aria-label="Delete this list">- Delete this list</button>
     </div>
 
+    <section id="checked-items" class="mt-5 hidden rounded-xl border border-line bg-[#fbfbf7] px-4 py-3" aria-labelledby="checked-items-heading">
+      <h2 id="checked-items-heading" class="font-display text-xl text-ink">Checked items</h2>
+      <div id="checked-item-list" class="mt-2 divide-y divide-line"></div>
+    </section>
+
     <footer class="flex items-center justify-between py-5 text-xs text-muted">
       <span>Saved on this device</span>
-      <button id="clear-done" type="button" class="hidden min-h-11 px-2 font-medium text-leaf underline decoration-leaf/40 underline-offset-4">Clear checked items</button>
+      <div class="flex items-center gap-3">
+        <button id="show-done" type="button" class="hidden min-h-11 px-1 font-medium text-leaf underline decoration-leaf/40 underline-offset-4">Show checked items</button>
+        <button id="clear-done" type="button" class="hidden min-h-11 px-1 font-medium text-leaf underline decoration-leaf/40 underline-offset-4">Clear checked items</button>
+      </div>
     </footer>
   </main>
 
@@ -215,6 +223,9 @@
       const categoriesEl = document.querySelector('#categories');
       const countEl = document.querySelector('#item-count');
       const clearDoneButton = document.querySelector('#clear-done');
+      const showDoneButton = document.querySelector('#show-done');
+      const checkedItemsSection = document.querySelector('#checked-items');
+      const checkedItemList = document.querySelector('#checked-item-list');
       const mealsEl = document.querySelector('#meal-list');
       const mealAddArea = document.querySelector('#meal-add-area');
       const mealPlanStatus = document.querySelector('#meal-plan-status');
@@ -245,6 +256,7 @@
       let emojiCategory = 'All';
       let dragState = null;
       let itemDragState = null;
+      let checkedItemsVisible = false;
 
       function persist() {
         try {
@@ -265,6 +277,15 @@
         const activeCount = list.active.length;
         countEl.textContent = `${activeCount} ${activeCount === 1 ? 'item' : 'items'}`;
         clearDoneButton.classList.toggle('hidden', list.archive.length === 0);
+        showDoneButton.classList.toggle('hidden', list.archive.length === 0);
+        showDoneButton.textContent = checkedItemsVisible ? 'Hide checked items' : 'Show checked items';
+        checkedItemsSection.classList.toggle('hidden', !checkedItemsVisible || list.archive.length === 0);
+        checkedItemList.innerHTML = list.archive.map(item => `
+          <div class="flex min-h-[48px] items-center gap-3">
+            <span class="check-box opacity-60" aria-hidden="true"></span>
+            <span class="min-w-0 flex-1 text-[16px] text-muted line-through">${escapeHtml(item.label)}</span>
+            <button type="button" class="min-h-11 px-1 text-xs font-medium text-leaf" data-action="restore-item" data-id="${escapeHtml(item.id)}">Restore</button>
+          </div>`).join('');
         renderMeals();
 
         categoriesEl.innerHTML = list.categoryOrder.map((name, index) => {
@@ -918,6 +939,26 @@
 
       clearDoneButton.addEventListener('click', () => {
         currentList().archive = [];
+        checkedItemsVisible = false;
+        persist();
+        render();
+      });
+
+      showDoneButton.addEventListener('click', () => {
+        checkedItemsVisible = !checkedItemsVisible;
+        render();
+      });
+
+      checkedItemList.addEventListener('click', event => {
+        const restoreButton = event.target.closest('[data-action="restore-item"]');
+        if (!restoreButton) return;
+        const list = currentList();
+        const index = list.archive.findIndex(item => item.id === restoreButton.dataset.id);
+        if (index === -1) return;
+        const [item] = list.archive.splice(index, 1);
+        delete item.checked;
+        delete item.archivedAt;
+        list.active.push(item);
         persist();
         render();
       });
@@ -927,7 +968,7 @@
       render();
     })();
   </script>
-<p>test3</p>
+<p>test4</p>
 </body>
 </html>
 <!-- comment -->
