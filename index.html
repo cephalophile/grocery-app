@@ -537,17 +537,28 @@
         const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
         const groups = emojiCategory === 'All' ? [{ name: 'All', emojis: ALL_EMOJIS }] : EMOJI_GROUPS.filter(group => group.name === emojiCategory);
         const emojis = groups.flatMap(group => group.emojis).filter(([, label]) => !normalizedSearch || label.includes(normalizedSearch));
-        listEmojiPicker.innerHTML = `
-          <div class="mb-2 flex gap-2">
-            <label class="sr-only" for="emoji-search">Search emojis</label>
-            <input id="emoji-search" type="search" value="${escapeHtml(searchTerm)}" placeholder="Search emojis" autocomplete="off" class="min-h-10 min-w-0 flex-1 rounded-lg border border-[#cbd2c8] bg-paper px-3 text-sm text-ink outline-none">
-          </div>
-          <div class="mb-2 flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Emoji categories">
-            ${['All', ...EMOJI_GROUPS.map(group => group.name)].map(category => `<button type="button" class="shrink-0 rounded-md px-2 py-1 text-xs ${category === emojiCategory ? 'bg-mint font-semibold text-leaf' : 'text-muted'}" data-emoji-category="${escapeHtml(category)}" role="tab" aria-selected="${category === emojiCategory}">${escapeHtml(category)}</button>`).join('')}
-          </div>
-          <div class="grid max-h-[280px] grid-cols-6 gap-1 overflow-y-auto" role="listbox" aria-label="Emoji options">
-            ${emojis.length ? emojis.map(([emoji, label]) => `<button type="button" class="emoji-option rounded-lg text-xl hover:bg-mint" data-emoji="${emoji}" aria-label="Use ${escapeHtml(label)}" title="${escapeHtml(label)}" role="option">${emoji}</button>`).join('') : '<p class="col-span-6 px-2 py-4 text-center text-sm text-muted">No matching emojis</p>'}
-          </div>`;
+        if (!listEmojiPicker.querySelector('#emoji-search')) {
+          listEmojiPicker.innerHTML = `
+            <div class="mb-2 flex gap-2">
+              <label class="sr-only" for="emoji-search">Search emojis</label>
+              <input id="emoji-search" type="search" placeholder="Search emojis" autocomplete="off" class="min-h-10 min-w-0 flex-1 rounded-lg border border-[#cbd2c8] bg-paper px-3 text-sm text-ink outline-none">
+            </div>
+            <div class="mb-2 flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Emoji categories">
+              ${['All', ...EMOJI_GROUPS.map(group => group.name)].map(category => `<button type="button" class="shrink-0 rounded-md px-2 py-1 text-xs" data-emoji-category="${escapeHtml(category)}" role="tab" aria-selected="false">${escapeHtml(category)}</button>`).join('')}
+            </div>
+            <div id="emoji-options" class="grid max-h-[280px] grid-cols-6 gap-1 overflow-y-auto" role="listbox" aria-label="Emoji options"></div>`;
+        }
+        listEmojiPicker.querySelectorAll('[data-emoji-category]').forEach(button => {
+          const selected = button.dataset.emojiCategory === emojiCategory;
+          button.classList.toggle('bg-mint', selected);
+          button.classList.toggle('font-semibold', selected);
+          button.classList.toggle('text-leaf', selected);
+          button.classList.toggle('text-muted', !selected);
+          button.setAttribute('aria-selected', String(selected));
+        });
+        listEmojiPicker.querySelector('#emoji-options').innerHTML = emojis.length
+          ? emojis.map(([emoji, label]) => `<button type="button" class="emoji-option rounded-lg text-xl hover:bg-mint" data-emoji="${emoji}" aria-label="Use ${escapeHtml(label)}" title="${escapeHtml(label)}" role="option">${emoji}</button>`).join('')
+          : '<p class="col-span-6 px-2 py-4 text-center text-sm text-muted">No matching emojis</p>';
       }
 
       function closeListEmojiEdit() {
@@ -818,7 +829,7 @@
       render();
     })();
   </script>
-<p>test</p>
+<p>test1</p>
 </body>
 </html>
 <!-- comment -->
