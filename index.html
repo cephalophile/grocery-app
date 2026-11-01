@@ -54,30 +54,31 @@
         <span id="item-count" class="rounded-full bg-mint px-3 py-1.5 text-xs font-medium text-leaf" aria-live="polite">0 items</span>
       </div>
       <div class="mt-3 flex items-end justify-between gap-3">
-        <div>
-          <div class="flex items-center gap-2">
+        <div class="flex min-w-0 items-center gap-2">
+          <div class="relative shrink-0">
+            <button id="list-emoji" type="button" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8e4d7] text-[23px]" aria-label="Edit list emoji" aria-expanded="false" title="Edit list emoji"></button>
+            <div id="list-emoji-picker" class="emoji-picker absolute left-0 top-14 z-10 hidden w-52 rounded-xl p-2" role="group" aria-label="Choose list emoji"></div>
+          </div>
+          <div class="min-w-0">
             <label class="sr-only" for="list-select">Current list</label>
             <select id="list-select" class="min-h-11 max-w-[250px] min-w-0 bg-transparent pr-7 font-display text-[38px] leading-[1.05] text-ink outline-none"></select>
+            <p id="today" class="mt-2 text-sm text-muted"></p>
           </div>
-          <p id="today" class="mt-2 text-sm text-muted"></p>
-        </div>
-        <div class="relative mb-1">
-          <button id="list-emoji" type="button" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8e4d7] text-[23px]" aria-label="Edit list emoji" aria-expanded="false" title="Edit list emoji"></button>
-          <div id="list-emoji-picker" class="emoji-picker absolute right-0 top-14 z-10 hidden w-52 rounded-xl p-2" role="group" aria-label="Choose list emoji"></div>
         </div>
       </div>
-      <div id="list-actions" class="mt-3"></div>
+      <div id="list-actions" class="mt-1"></div>
     </header>
 
-    <section class="mb-5 rounded-xl border border-[#dce5d8] bg-[#eef3eb] px-4 py-3" aria-labelledby="meal-plan-heading">
+    <section id="meal-plan-section" class="mb-5 rounded-xl border border-[#dce5d8] bg-[#eef3eb] px-4 py-3" aria-labelledby="meal-plan-heading">
       <div class="flex items-center justify-between gap-3">
-        <button id="meal-plan-toggle" type="button" class="flex min-h-12 min-w-0 flex-1 items-center justify-between gap-3 text-left" aria-expanded="true" aria-controls="meal-plan-content">
-          <span id="meal-plan-heading" class="font-display text-xl text-ink">This week's meals</span>
-          <span class="flex shrink-0 items-center gap-2">
-            <span id="meal-plan-count" class="text-xs text-muted"></span>
-            <span id="meal-plan-chevron" class="text-lg text-leaf" aria-hidden="true">⌄</span>
-          </span>
+        <span id="meal-plan-heading" class="min-w-0 flex-1 cursor-pointer font-display text-xl text-ink" role="button" tabindex="0" title="Tap to rename">This week's meals</span>
+        <button id="meal-plan-toggle" type="button" class="flex min-h-12 shrink-0 items-center gap-2 text-left" aria-expanded="true" aria-controls="meal-plan-content">
+          <span id="meal-plan-count" class="text-xs text-muted"></span>
+          <span id="meal-plan-chevron" class="text-lg text-leaf" aria-hidden="true">⌄</span>
         </button>
+        <div class="flex shrink-0 items-center gap-1">
+          <button type="button" class="min-h-11 rounded-lg px-2 text-xs font-medium text-muted" data-action="remove-meals" aria-label="Remove meal section">Remove</button>
+        </div>
       </div>
       <div id="meal-plan-content">
         <div class="mb-1 flex justify-end">
@@ -112,6 +113,7 @@
       'use strict';
 
       const STORAGE_KEY = 'market-list-v1';
+      const NEW_LIST_VALUE = '__new-list__';
       const ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
       const CATEGORIES = [
         { name: 'Produce', defaults: ['apples', 'onion', 'potatoes'] },
@@ -148,7 +150,9 @@
         categoryOrder: CATEGORIES.map(({ name: category }) => category),
         categoryColors: Object.fromEntries(CATEGORIES.map(({ name: category }) => [category, randomColorIndex()])),
         meals: [],
-        mealsCollapsed: false
+        mealsCollapsed: false,
+        mealsEnabled: true,
+        mealsTitle: "This week's meals"
       });
       const makeInitialState = () => {
         const list = makeList('Grocery list', true);
@@ -163,6 +167,8 @@
         list.archive = Array.isArray(list.archive) ? list.archive : [];
         list.meals = Array.isArray(list.meals) ? list.meals.filter(meal => meal && typeof meal.label === 'string').map(meal => ({ id: meal.id || makeId(), label: meal.label })) : [];
         list.mealsCollapsed = list.mealsCollapsed === true;
+        list.mealsEnabled = list.mealsEnabled !== false;
+        list.mealsTitle = typeof list.mealsTitle === 'string' && list.mealsTitle.trim() ? list.mealsTitle.trim() : "This week's meals";
         list.categories = [...new Set((Array.isArray(list.categories) ? list.categories : CATEGORIES.map(({ name }) => name)).filter(name => typeof name === 'string' && name.trim()))];
         list.categoryColors = list.categoryColors && typeof list.categoryColors === 'object' ? list.categoryColors : {};
         const usedColors = new Set();
@@ -213,6 +219,7 @@
       const mealPlanContent = document.querySelector('#meal-plan-content');
       const mealPlanCount = document.querySelector('#meal-plan-count');
       const mealPlanChevron = document.querySelector('#meal-plan-chevron');
+      const mealPlanSection = document.querySelector('#meal-plan-section');
       const listSelect = document.querySelector('#list-select');
       const listActions = document.querySelector('#list-actions');
       const listEmoji = document.querySelector('#list-emoji');
@@ -248,10 +255,10 @@
 
       function render() {
         const list = currentList();
-        listSelect.innerHTML = state.lists.map(entry => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`).join('');
+        listSelect.innerHTML = `${state.lists.map(entry => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`).join('')}<option value="${NEW_LIST_VALUE}">+ New List</option>`;
         listSelect.value = list.id;
         listEmoji.textContent = list.emoji;
-        listActions.innerHTML = `<button type="button" class="min-h-11 px-1 text-sm font-medium text-leaf underline decoration-leaf/40 underline-offset-4" data-action="open-list-add">+ New list</button>`;
+        listActions.innerHTML = list.mealsEnabled ? '' : '<button type="button" class="min-h-11 px-1 text-sm font-medium text-leaf underline decoration-leaf/40 underline-offset-4" data-action="add-meals">+ Add header section</button>';
         const activeCount = list.active.length;
         countEl.textContent = `${activeCount} ${activeCount === 1 ? 'item' : 'items'}`;
         clearDoneButton.classList.toggle('hidden', list.archive.length === 0);
@@ -293,6 +300,8 @@
 
       function renderMeals() {
         const list = currentList();
+        mealPlanSection.hidden = !list.mealsEnabled;
+        document.querySelector('#meal-plan-heading').textContent = list.mealsTitle;
         const count = list.meals.length;
         mealPlanCount.textContent = `${count} ${count === 1 ? 'meal' : 'meals'}`;
         mealPlanToggle.setAttribute('aria-expanded', String(!list.mealsCollapsed));
@@ -303,6 +312,42 @@
             <button type="button" class="min-h-[48px] min-w-0 flex-1 py-2 text-left text-[16px] text-ink" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">${escapeHtml(meal.label)}</button>
             <button type="button" class="min-h-11 min-w-11 rounded-lg text-lg text-muted" data-action="delete-meal" data-id="${escapeHtml(meal.id)}" aria-label="Delete ${escapeHtml(meal.label)}" title="Delete meal">&times;</button>
           </div>`).join('');
+      }
+
+      function renameMeals() {
+        const list = currentList();
+        if (mealPlanSection.querySelector('input')) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = list.mealsTitle;
+        input.maxLength = 60;
+        input.autocomplete = 'off';
+        input.setAttribute('aria-label', 'Meal section name');
+        input.className = 'min-h-11 min-w-0 flex-1 border-b border-leaf/40 bg-transparent font-display text-xl text-ink outline-none';
+        document.querySelector('#meal-plan-heading').replaceWith(input);
+        let saved = false;
+        const finish = commit => {
+          if (saved) return;
+          saved = true;
+          const title = input.value.trim();
+          if (commit && title) list.mealsTitle = title;
+          const heading = document.createElement('span');
+          heading.id = 'meal-plan-heading';
+          heading.className = 'font-display text-xl text-ink';
+          heading.setAttribute('role', 'button');
+          heading.setAttribute('tabindex', '0');
+          heading.title = 'Tap to rename';
+          heading.textContent = list.mealsTitle;
+          input.replaceWith(heading);
+          persist();
+          render();
+        };
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+          if (event.key === 'Escape') finish(false);
+        });
+        input.addEventListener('blur', () => finish(true));
+        focusInput(input);
       }
 
       function startMealEditing(button) {
@@ -656,6 +701,10 @@
       });
 
       listSelect.addEventListener('change', () => {
+        if (listSelect.value === NEW_LIST_VALUE) {
+          openListAdd();
+          return;
+        }
         state.selectedListId = listSelect.value;
         persist();
         render();
@@ -710,6 +759,37 @@
 
       mealAddArea.addEventListener('click', event => {
         if (event.target.closest('[data-action="open-meal-add"]')) openMealAdd();
+      });
+
+      mealPlanSection.addEventListener('click', event => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'remove-meals') {
+          currentList().mealsEnabled = false;
+          persist();
+          render();
+        }
+      });
+
+      mealPlanSection.addEventListener('click', event => {
+        if (event.target.closest('#meal-plan-heading')) {
+          event.stopPropagation();
+          renameMeals();
+        }
+      }, true);
+
+      mealPlanSection.addEventListener('keydown', event => {
+        if (event.target.closest('#meal-plan-heading') && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          renameMeals();
+        }
+      });
+
+      listActions.addEventListener('click', event => {
+        if (event.target.closest('[data-action="add-meals"]')) {
+          currentList().mealsEnabled = true;
+          persist();
+          render();
+        }
       });
 
       mealPlanToggle.addEventListener('click', () => {
