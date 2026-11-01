@@ -6,7 +6,6 @@
   <meta name="theme-color" content="#f7f7f2">
   <title>Grocery List</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -39,7 +38,7 @@
     .category-heading { border-radius: 9999px; background: var(--group-tint); color: var(--group-color); }
     .move-picker { border: 1px solid #dce5d8; background: #f1f5ef; }
     .emoji-picker { border: 1px solid #dce5d8; background: #fffefa; box-shadow: 0 8px 20px rgb(32 53 44 / 12%); }
-    emoji-picker { --emoji-picker-height: 360px; --emoji-picker-width: min(320px, calc(100vw - 40px)); }
+    .emoji-option { aspect-ratio: 1; }
     .check-box:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #a9c7aa; outline-offset: 3px; }
     @media (prefers-reduced-motion: no-preference) {
       .category { animation: arrive .35s ease both; }
@@ -218,7 +217,22 @@
       const listActions = document.querySelector('#list-actions');
       const listEmoji = document.querySelector('#list-emoji');
       const listEmojiPicker = document.querySelector('#list-emoji-picker');
-      const EMOJI_DATA_SOURCE = 'https://cdn.jsdelivr.net/npm/emoji-picker-element-data@1/en/emojibase/data.json';
+      const EMOJI_GROUPS = [
+        { name: 'Food & groceries', emojis: [
+          ['🥬', 'lettuce'], ['🥦', 'broccoli'], ['🥕', 'carrot'], ['🌽', 'corn'], ['🥔', 'potato'], ['🍅', 'tomato'], ['🧅', 'onion'], ['🧄', 'garlic'], ['🍎', 'apple'], ['🍏', 'green apple'], ['🍐', 'pear'], ['🍊', 'orange'], ['🍋', 'lemon'], ['🍌', 'banana'], ['🍉', 'watermelon'], ['🍇', 'grapes'], ['🍓', 'strawberry'], ['🫐', 'blueberries'], ['🥑', 'avocado'], ['🍞', 'bread'], ['🥐', 'croissant'], ['🥯', 'bagel'], ['🥨', 'pretzel'], ['🧀', 'cheese'], ['🥚', 'egg'], ['🥓', 'bacon'], ['🥩', 'steak'], ['🍗', 'chicken'], ['🌭', 'hot dog'], ['🍔', 'hamburger'], ['🍕', 'pizza'], ['🌮', 'taco'], ['🍜', 'noodles'], ['🍚', 'rice'], ['🥫', 'canned food'], ['🧈', 'butter'], ['🍯', 'honey'], ['🧂', 'salt'], ['🍿', 'popcorn'], ['🍪', 'cookie'], ['🍰', 'cake'], ['🍫', 'chocolate'], ['🍦', 'ice cream'], ['☕', 'coffee'], ['🫖', 'tea'], ['🧃', 'juice'], ['🥛', 'milk'], ['🍺', 'beer'], ['🍷', 'wine']
+        ]},
+        { name: 'Shopping & stores', emojis: [
+          ['🛒', 'shopping cart'], ['🛍️', 'shopping bags'], ['🧺', 'basket'], ['🏪', 'convenience store'], ['🏬', 'department store'], ['🏫', 'store'], ['🏷️', 'label'], ['💳', 'credit card'], ['💵', 'money'], ['🧾', 'receipt'], ['📦', 'package'], ['📫', 'mailbox'], ['🚚', 'delivery truck'], ['🛻', 'pickup truck'], ['🧹', 'broom'], ['🧽', 'sponge'], ['🧻', 'toilet paper'], ['🧼', 'soap'], ['🪣', 'bucket'], ['🔑', 'key'], ['🛠️', 'tools']
+        ]},
+        { name: 'Symbols', emojis: [
+          ['❗', 'exclamation mark'], ['❓', 'question mark'], ['‼️', 'double exclamation'], ['⁉️', 'exclamation question'], ['⭐', 'star'], ['🌟', 'glowing star'], ['✨', 'sparkles'], ['💡', 'idea'], ['✅', 'check mark'], ['❌', 'cross mark'], ['➕', 'plus'], ['➖', 'minus'], ['✖️', 'multiply'], ['➗', 'divide'], ['⭕', 'circle'], ['⚠️', 'warning'], ['🔔', 'bell'], ['❤️', 'heart'], ['💚', 'green heart'], ['*️⃣', 'asterisk'], ['#️⃣', 'number sign'], ['©️', 'copyright'], ['™️', 'trademark']
+        ]},
+        { name: 'Flags', emojis: [
+          ['🇺🇸', 'United States flag'], ['🇨🇦', 'Canada flag'], ['🇲🇽', 'Mexico flag'], ['🇬🇧', 'United Kingdom flag'], ['🇮🇪', 'Ireland flag'], ['🇫🇷', 'France flag'], ['🇩🇪', 'Germany flag'], ['🇮🇹', 'Italy flag'], ['🇪🇸', 'Spain flag'], ['🇵🇹', 'Portugal flag'], ['🇳🇱', 'Netherlands flag'], ['🇸🇪', 'Sweden flag'], ['🇳🇴', 'Norway flag'], ['🇩🇰', 'Denmark flag'], ['🇫🇮', 'Finland flag'], ['🇨🇭', 'Switzerland flag'], ['🇦🇺', 'Australia flag'], ['🇳🇿', 'New Zealand flag'], ['🇯🇵', 'Japan flag'], ['🇰🇷', 'South Korea flag'], ['🇨🇳', 'China flag'], ['🇮🇳', 'India flag'], ['🇧🇷', 'Brazil flag'], ['🇦🇷', 'Argentina flag'], ['🇿🇦', 'South Africa flag'], ['🇪🇺', 'European Union flag']
+        ]}
+      ];
+      const ALL_EMOJIS = EMOJI_GROUPS.flatMap(group => group.emojis);
+      let emojiCategory = 'All';
       let dragState = null;
       let itemDragState = null;
 
@@ -514,29 +528,26 @@
       }
 
       function openListEmojiEdit() {
-        if (!listEmojiPicker.querySelector('emoji-picker')) {
-          const picker = document.createElement('emoji-picker');
-          picker.dataSource = EMOJI_DATA_SOURCE;
-          picker.addEventListener('emoji-click', event => {
-            currentList().emoji = event.detail.unicode;
-            persist();
-            listEmojiPicker.classList.add('hidden');
-            listEmoji.setAttribute('aria-expanded', 'false');
-            render();
-          });
-          customElements.whenDefined('emoji-picker').then(() => {
-            const search = picker.shadowRoot?.querySelector('input');
-            if (!search) return;
-            search.addEventListener('input', () => {
-              if (search.value.trim().toLocaleLowerCase() !== 'cart') return;
-              search.value = 'shopping cart';
-              search.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-            });
-          });
-          listEmojiPicker.replaceChildren(picker);
-        }
+        renderEmojiPicker();
         listEmojiPicker.classList.toggle('hidden');
         listEmoji.setAttribute('aria-expanded', String(!listEmojiPicker.classList.contains('hidden')));
+      }
+
+      function renderEmojiPicker(searchTerm = '') {
+        const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
+        const groups = emojiCategory === 'All' ? [{ name: 'All', emojis: ALL_EMOJIS }] : EMOJI_GROUPS.filter(group => group.name === emojiCategory);
+        const emojis = groups.flatMap(group => group.emojis).filter(([, label]) => !normalizedSearch || label.includes(normalizedSearch));
+        listEmojiPicker.innerHTML = `
+          <div class="mb-2 flex gap-2">
+            <label class="sr-only" for="emoji-search">Search emojis</label>
+            <input id="emoji-search" type="search" value="${escapeHtml(searchTerm)}" placeholder="Search emojis" autocomplete="off" class="min-h-10 min-w-0 flex-1 rounded-lg border border-[#cbd2c8] bg-paper px-3 text-sm text-ink outline-none">
+          </div>
+          <div class="mb-2 flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Emoji categories">
+            ${['All', ...EMOJI_GROUPS.map(group => group.name)].map(category => `<button type="button" class="shrink-0 rounded-md px-2 py-1 text-xs ${category === emojiCategory ? 'bg-mint font-semibold text-leaf' : 'text-muted'}" data-emoji-category="${escapeHtml(category)}" role="tab" aria-selected="${category === emojiCategory}">${escapeHtml(category)}</button>`).join('')}
+          </div>
+          <div class="grid max-h-[280px] grid-cols-6 gap-1 overflow-y-auto" role="listbox" aria-label="Emoji options">
+            ${emojis.length ? emojis.map(([emoji, label]) => `<button type="button" class="emoji-option rounded-lg text-xl hover:bg-mint" data-emoji="${emoji}" aria-label="Use ${escapeHtml(label)}" title="${escapeHtml(label)}" role="option">${emoji}</button>`).join('') : '<p class="col-span-6 px-2 py-4 text-center text-sm text-muted">No matching emojis</p>'}
+          </div>`;
       }
 
       function closeListEmojiEdit() {
@@ -644,6 +655,25 @@
       });
 
       listEmoji.addEventListener('click', openListEmojiEdit);
+
+      listEmojiPicker.addEventListener('input', event => {
+        if (event.target.id === 'emoji-search') renderEmojiPicker(event.target.value);
+      });
+
+      listEmojiPicker.addEventListener('click', event => {
+        const categoryButton = event.target.closest('[data-emoji-category]');
+        if (categoryButton) {
+          emojiCategory = categoryButton.dataset.emojiCategory;
+          renderEmojiPicker(listEmojiPicker.querySelector('#emoji-search')?.value || '');
+          return;
+        }
+        const emojiButton = event.target.closest('[data-emoji]');
+        if (!emojiButton) return;
+        currentList().emoji = emojiButton.dataset.emoji;
+        persist();
+        closeListEmojiEdit();
+        render();
+      });
 
       document.addEventListener('click', event => {
         if (listEmojiPicker.classList.contains('hidden')) return;
@@ -788,5 +818,7 @@
       render();
     })();
   </script>
+<p>test</p>
 </body>
 </html>
+<!-- comment -->
