@@ -113,8 +113,8 @@
     <footer class="flex items-center justify-between py-5 text-xs text-muted">
       <span>Saved on this device</span>
       <div class="flex items-center gap-3">
-        <button id="show-done" type="button" class="hidden min-h-11 px-1 font-medium text-leaf underline decoration-leaf/40 underline-offset-4">Show checked items</button>
-        <button id="clear-done" type="button" class="hidden min-h-11 px-1 font-medium text-leaf underline decoration-leaf/40 underline-offset-4">Clear checked items</button>
+        <button id="show-done" type="button" class="min-h-11 px-1 font-medium text-leaf underline decoration-leaf/40 underline-offset-4">Show checked items</button>
+        <button id="clear-done" type="button" class="min-h-11 px-1 font-medium text-leaf underline decoration-leaf/40 underline-offset-4">Clear checked items</button>
       </div>
     </footer>
   </main>
@@ -276,8 +276,9 @@
         listActions.innerHTML = list.mealsEnabled ? '' : '<button type="button" class="min-h-11 px-1 text-sm font-medium text-leaf underline decoration-leaf/40 underline-offset-4" data-action="add-meals">+ Add header section</button>';
         const activeCount = list.active.length;
         countEl.textContent = `${activeCount} ${activeCount === 1 ? 'item' : 'items'}`;
-        clearDoneButton.classList.toggle('hidden', list.archive.length === 0);
-        showDoneButton.classList.toggle('hidden', list.archive.length === 0);
+        clearDoneButton.disabled = list.archive.length === 0;
+        clearDoneButton.classList.toggle('opacity-40', list.archive.length === 0);
+        clearDoneButton.classList.toggle('cursor-not-allowed', list.archive.length === 0);
         showDoneButton.textContent = checkedItemsVisible ? 'Hide checked items' : 'Show checked items';
         checkedItemsSection.classList.toggle('hidden', !checkedItemsVisible || list.archive.length === 0);
         checkedItemList.innerHTML = list.archive.map(item => `
@@ -968,7 +969,7 @@
       render();
     })();
   </script>
-<p>test4</p>
+<p>test5</p>
 </body>
 </html>
 <!-- comment -->
