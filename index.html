@@ -40,6 +40,7 @@
     .move-picker { border: 1px solid #dce5d8; background: #f1f5ef; }
     .emoji-picker { border: 1px solid #dce5d8; background: #fffefa; box-shadow: 0 8px 20px rgb(32 53 44 / 12%); }
     emoji-picker { --emoji-picker-height: 360px; --emoji-picker-width: min(320px, calc(100vw - 40px)); }
+    .emoji-search-result { border-bottom: 1px solid #e6e7df; }
     .check-box:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #a9c7aa; outline-offset: 3px; }
     @media (prefers-reduced-motion: no-preference) {
       .category { animation: arrive .35s ease both; }
@@ -64,7 +65,12 @@
         </div>
         <div class="relative mb-1">
           <button id="list-emoji" type="button" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8e4d7] text-[23px]" aria-label="Edit list emoji" aria-expanded="false" title="Edit list emoji"></button>
-          <div id="list-emoji-picker" class="emoji-picker absolute right-0 top-14 z-10 hidden w-52 rounded-xl p-2" role="group" aria-label="Choose list emoji"></div>
+          <div id="list-emoji-picker" class="emoji-picker absolute right-0 top-14 z-10 hidden w-52 rounded-xl p-2" role="group" aria-label="Choose list emoji">
+            <button id="emoji-cart-result" type="button" class="emoji-search-result hidden flex min-h-11 w-full items-center gap-3 px-2 text-left text-sm text-ink" aria-label="Use shopping cart emoji">
+              <span class="text-xl" aria-hidden="true">🛒</span>
+              <span>Shopping cart</span>
+            </button>
+          </div>
         </div>
       </div>
       <div id="list-actions" class="mt-3"></div>
@@ -218,6 +224,7 @@
       const listActions = document.querySelector('#list-actions');
       const listEmoji = document.querySelector('#list-emoji');
       const listEmojiPicker = document.querySelector('#list-emoji-picker');
+      const emojiCartResult = document.querySelector('#emoji-cart-result');
       let dragState = null;
       let itemDragState = null;
 
@@ -526,12 +533,10 @@
             const search = picker.shadowRoot?.querySelector('input');
             if (!search) return;
             search.addEventListener('input', () => {
-              if (search.value.trim().toLocaleLowerCase() !== 'cart') return;
-              search.value = 'shopping cart';
-              search.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+              emojiCartResult.classList.toggle('hidden', search.value.trim().toLocaleLowerCase() !== 'cart');
             });
           });
-          listEmojiPicker.replaceChildren(picker);
+          listEmojiPicker.append(picker);
         }
         listEmojiPicker.classList.toggle('hidden');
         listEmoji.setAttribute('aria-expanded', String(!listEmojiPicker.classList.contains('hidden')));
@@ -637,6 +642,14 @@
       });
 
       listEmoji.addEventListener('click', openListEmojiEdit);
+
+      emojiCartResult.addEventListener('click', () => {
+        currentList().emoji = '🛒';
+        persist();
+        listEmojiPicker.classList.add('hidden');
+        listEmoji.setAttribute('aria-expanded', 'false');
+        render();
+      });
 
       document.querySelector('#add-category-area').addEventListener('click', event => {
         if (event.target.closest('[data-action="open-category-add"]')) openCategoryAdd(event.currentTarget);
