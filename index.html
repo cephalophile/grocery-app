@@ -522,6 +522,15 @@
             listEmoji.setAttribute('aria-expanded', 'false');
             render();
           });
+          customElements.whenDefined('emoji-picker').then(() => {
+            const search = picker.shadowRoot?.querySelector('input');
+            if (!search) return;
+            search.addEventListener('input', () => {
+              if (search.value.trim().toLocaleLowerCase() !== 'cart') return;
+              search.value = 'shopping cart';
+              search.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            });
+          });
           listEmojiPicker.replaceChildren(picker);
         }
         listEmojiPicker.classList.toggle('hidden');
