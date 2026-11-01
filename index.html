@@ -101,6 +101,9 @@
         <span>Add group</span>
       </button>
     </div>
+    <div class="mt-5">
+      <button id="delete-list-button" type="button" class="min-h-11 px-1 text-sm font-medium text-tomato underline decoration-tomato/40 underline-offset-4" aria-label="Delete this list">- Delete this list</button>
+    </div>
 
     <footer class="flex items-center justify-between py-5 text-xs text-muted">
       <span>Saved on this device</span>
@@ -572,6 +575,19 @@
         focusInput(input);
       }
 
+      function deleteCurrentList() {
+        if (state.lists.length === 1) return;
+        const list = currentList();
+        if (!confirm(`Delete "${list.name}" and all of its items?`)) {
+          render();
+          return;
+        }
+        state.lists = state.lists.filter(entry => entry.id !== list.id);
+        state.selectedListId = state.lists[0].id;
+        persist();
+        render();
+      }
+
       function openListEmojiEdit() {
         renderEmojiPicker();
         listEmojiPicker.classList.toggle('hidden');
@@ -715,6 +731,8 @@
       });
 
       listEmoji.addEventListener('click', openListEmojiEdit);
+
+      document.querySelector('#delete-list-button').addEventListener('click', deleteCurrentList);
 
       listEmojiPicker.addEventListener('input', event => {
         if (event.target.id === 'emoji-search') renderEmojiPicker(event.target.value);
@@ -909,7 +927,7 @@
       render();
     })();
   </script>
-<p>test2</p>
+<p>test3</p>
 </body>
 </html>
 <!-- comment -->
