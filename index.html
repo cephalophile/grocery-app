@@ -218,6 +218,7 @@
       const listActions = document.querySelector('#list-actions');
       const listEmoji = document.querySelector('#list-emoji');
       const listEmojiPicker = document.querySelector('#list-emoji-picker');
+      const EMOJI_DATA_SOURCE = 'https://cdn.jsdelivr.net/npm/emoji-picker-element-data@1/en/emojibase/data.json';
       let dragState = null;
       let itemDragState = null;
 
@@ -515,6 +516,7 @@
       function openListEmojiEdit() {
         if (!listEmojiPicker.querySelector('emoji-picker')) {
           const picker = document.createElement('emoji-picker');
+          picker.dataSource = EMOJI_DATA_SOURCE;
           picker.addEventListener('emoji-click', event => {
             currentList().emoji = event.detail.unicode;
             persist();
